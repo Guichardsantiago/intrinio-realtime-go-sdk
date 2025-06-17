@@ -96,47 +96,50 @@ func workOnEquities(
 	aggregator := NewTradeAggregator()
 	lastCandleTime := float64(0)
 
-	select {
-	case data := <-readChannel:
-		count := data[0]
-		startIndex := 1
-		for i := 0; i < int(count); i++ {
-			msgType := data[startIndex]
-			if (msgType == 1) || (msgType == 2) {
-				endIndex := startIndex + int(data[startIndex+1])
-				quote := parseEquityQuote(data[startIndex:endIndex])
-				startIndex = endIndex
-				if onQuote != nil {
-					onQuote(quote)
-				}
-			} else if msgType == 0 {
-				endIndex := startIndex + int(data[startIndex+1])
-				trade := parseEquityTrade(data[startIndex:endIndex])
-				startIndex = endIndex
-
-				// Add trade to aggregator
-				aggregator.AddTrade(trade)
-
-				// Check if we need to emit candles
-				currentMinute := math.Floor(trade.Timestamp/60) * 60
-				if currentMinute > lastCandleTime {
-					candles := aggregator.GetAndClearCandles(currentMinute)
-					for _, candle := range candles {
-						if onCandle != nil {
-							onCandle(candle)
-						}
+	for {
+		select {
+		case data := <-readChannel:
+			count := data[0]
+			startIndex := 1
+			for i := 0; i < int(count); i++ {
+				msgType := data[startIndex]
+				if (msgType == 1) || (msgType == 2) {
+					endIndex := startIndex + int(data[startIndex+1])
+					quote := parseEquityQuote(data[startIndex:endIndex])
+					startIndex = endIndex
+					if onQuote != nil {
+						onQuote(quote)
 					}
-					lastCandleTime = currentMinute
-				}
+				} else if msgType == 0 {
+					endIndex := startIndex + int(data[startIndex+1])
+					trade := parseEquityTrade(data[startIndex:endIndex])
+					startIndex = endIndex
 
-				if onTrade != nil {
-					onTrade(trade)
+					// Add trade to aggregator
+					aggregator.AddTrade(trade)
+
+					// Check if we need to emit candles
+					currentMinute := math.Floor(trade.Timestamp/60) * 60
+					if currentMinute > lastCandleTime {
+						// Emit candles for the previous minute
+						candles := aggregator.GetAndClearCandles(currentMinute)
+						for _, candle := range candles {
+							if onCandle != nil {
+								onCandle(candle)
+							}
+						}
+						// Only update lastCandleTime after emitting candles
+						lastCandleTime = currentMinute
+					}
+
+					if onTrade != nil {
+						onTrade(trade)
+					}
+				} else {
+					log.Printf("Equity Client - Invalid message type: %d", msgType)
 				}
-			} else {
-				log.Printf("Equity Client - Invalid message type: %d", msgType)
 			}
 		}
-	default:
 	}
 }
 
