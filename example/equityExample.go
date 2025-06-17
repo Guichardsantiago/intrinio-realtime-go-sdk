@@ -12,6 +12,8 @@ var eTradeCount int = 0
 var eTradeCountLock sync.RWMutex
 var eQuoteCount int = 0
 var eQuoteCountLock sync.RWMutex
+var eCandleCount int = 0
+var eCandleCountLock sync.RWMutex
 
 func handleEquityTrade(trade intrinio.EquityTrade) {
 	eTradeCountLock.Lock()
@@ -31,6 +33,14 @@ func handleEquityQuote(quote intrinio.EquityQuote) {
 	// }
 }
 
+func handleEquityCandle(candle intrinio.EquityCandle) {
+	eCandleCountLock.Lock()
+	eCandleCount++
+	eCandleCountLock.Unlock()
+	log.Printf("Candle for %s: O: %.2f, H: %.2f, L: %.2f, C: %.2f, V: %d",
+		candle.Symbol, candle.Open, candle.High, candle.Low, candle.Close, candle.Volume)
+}
+
 func reportEquities(ticker <-chan time.Time) {
 	for {
 		<-ticker
@@ -40,13 +50,16 @@ func reportEquities(ticker <-chan time.Time) {
 		eQuoteCountLock.RLock()
 		qc := eQuoteCount
 		eQuoteCountLock.RUnlock()
-		log.Printf("Equity Trade Count: %d, Equity Quote Count: %d\n", tc, qc)
+		eCandleCountLock.RLock()
+		cc := eCandleCount
+		eCandleCountLock.RUnlock()
+		log.Printf("Equity Trade Count: %d, Equity Quote Count: %d, Equity Candle Count: %d\n", tc, qc, cc)
 	}
 }
 
 func runEquitiesExample() *intrinio.Client {
 	var config intrinio.Config = intrinio.LoadConfig("equities-config.json")
-	var client *intrinio.Client = intrinio.NewEquitiesClient(config, handleEquityTrade, handleEquityQuote)
+	var client *intrinio.Client = intrinio.NewEquitiesClient(config, handleEquityTrade, handleEquityQuote, handleEquityCandle)
 	client.Start()
 	symbols := []string{"AAPL", "MSFT"}
 	//client.Join("GOOG")

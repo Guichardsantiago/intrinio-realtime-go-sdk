@@ -119,7 +119,8 @@ func NewOptionsClient(
 func NewEquitiesClient(
 	c Config,
 	onTrade func(EquityTrade),
-	onQuote func(EquityQuote)) *Client {
+	onQuote func(EquityQuote),
+	onCandle func(EquityCandle)) *Client {
 	client := &Client{
 		isStopped:     true,
 		isClosed:      true,
@@ -147,7 +148,8 @@ func NewEquitiesClient(
 			workOnEquities(
 				client.readChannel,
 				onTrade,
-				onQuote)
+				onQuote,
+				onCandle)
 		}
 	}
 	client.composeJoinMsg = func(symbol string) []byte {
