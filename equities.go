@@ -205,10 +205,13 @@ func (ta *TradeAggregator) GetAndClearCandles(currentTime float64) map[string]Eq
 			continue
 		}
 
-		// Find trades that belong to the previous minute
+		// Find trades that belong to the previous minute (the minute that just ended)
 		var minuteTrades []EquityTrade
+		previousMinuteStart := currentTime - 60
+		previousMinuteEnd := currentTime
+
 		for _, trade := range trades {
-			if trade.Timestamp < currentTime && trade.Timestamp >= currentTime-60 {
+			if trade.Timestamp >= previousMinuteStart && trade.Timestamp < previousMinuteEnd {
 				minuteTrades = append(minuteTrades, trade)
 			}
 		}
@@ -221,7 +224,7 @@ func (ta *TradeAggregator) GetAndClearCandles(currentTime float64) map[string]Eq
 				Low:       minuteTrades[0].Price,
 				Close:     minuteTrades[len(minuteTrades)-1].Price,
 				Volume:    0,
-				Timestamp: currentTime - 60,
+				Timestamp: previousMinuteStart,
 			}
 
 			for _, trade := range minuteTrades {
@@ -237,10 +240,10 @@ func (ta *TradeAggregator) GetAndClearCandles(currentTime float64) map[string]Eq
 			candles[symbol] = candle
 		}
 
-		// Keep only trades from the current minute
+		// Keep only trades from the current minute and future
 		var remainingTrades []EquityTrade
 		for _, trade := range trades {
-			if trade.Timestamp >= currentTime-60 {
+			if trade.Timestamp >= previousMinuteEnd {
 				remainingTrades = append(remainingTrades, trade)
 			}
 		}
