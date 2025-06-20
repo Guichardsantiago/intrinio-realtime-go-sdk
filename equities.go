@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	"log"
 	"math"
-	"sync"
 )
 
 type EquityTrade struct {
@@ -93,8 +92,9 @@ func workOnEquities(
 	onQuote func(EquityQuote),
 	onCandle func(EquityCandle)) {
 
-	aggregator := NewTradeAggregator()
-	lastCandleTime := float64(0)
+	// Create the candle aggregator
+	candleAggregator := AggregateCandle(onCandle)
+	defer candleAggregator.Stop()
 
 	for {
 		select {
@@ -115,22 +115,8 @@ func workOnEquities(
 					trade := parseEquityTrade(data[startIndex:endIndex])
 					startIndex = endIndex
 
-					// Add trade to aggregator
-					aggregator.AddTrade(trade)
-
-					// Check if we need to emit candles
-					currentMinute := math.Floor(trade.Timestamp/60) * 60
-					if currentMinute > lastCandleTime {
-						// Emit candles for the previous minute
-						candles := aggregator.GetAndClearCandles(currentMinute)
-						for _, candle := range candles {
-							if onCandle != nil {
-								onCandle(candle)
-							}
-						}
-						// Only update lastCandleTime after emitting candles
-						lastCandleTime = currentMinute
-					}
+					// Add trade to the candle aggregator
+					candleAggregator.AddTrade(trade)
 
 					if onTrade != nil {
 						onTrade(trade)
@@ -174,81 +160,4 @@ type EquityCandle struct {
 	Close     float32
 	Volume    uint32
 	Timestamp float64
-}
-
-type TradeAggregator struct {
-	trades map[string][]EquityTrade
-	mu     sync.RWMutex
-}
-
-func NewTradeAggregator() *TradeAggregator {
-	return &TradeAggregator{
-		trades: make(map[string][]EquityTrade),
-	}
-}
-
-func (ta *TradeAggregator) AddTrade(trade EquityTrade) {
-	ta.mu.Lock()
-	defer ta.mu.Unlock()
-
-	ta.trades[trade.Symbol] = append(ta.trades[trade.Symbol], trade)
-}
-
-func (ta *TradeAggregator) GetAndClearCandles(currentTime float64) map[string]EquityCandle {
-	ta.mu.Lock()
-	defer ta.mu.Unlock()
-
-	candles := make(map[string]EquityCandle)
-
-	for symbol, trades := range ta.trades {
-		if len(trades) == 0 {
-			continue
-		}
-
-		// Find trades that belong to the previous minute (the minute that just ended)
-		var minuteTrades []EquityTrade
-		previousMinuteStart := currentTime - 60
-		previousMinuteEnd := currentTime
-
-		for _, trade := range trades {
-			if trade.Timestamp >= previousMinuteStart && trade.Timestamp < previousMinuteEnd {
-				minuteTrades = append(minuteTrades, trade)
-			}
-		}
-
-		if len(minuteTrades) > 0 {
-			candle := EquityCandle{
-				Symbol:    symbol,
-				Open:      minuteTrades[0].Price,
-				High:      minuteTrades[0].Price,
-				Low:       minuteTrades[0].Price,
-				Close:     minuteTrades[len(minuteTrades)-1].Price,
-				Volume:    0,
-				Timestamp: previousMinuteStart,
-			}
-
-			for _, trade := range minuteTrades {
-				if trade.Price > candle.High {
-					candle.High = trade.Price
-				}
-				if trade.Price < candle.Low {
-					candle.Low = trade.Price
-				}
-				candle.Volume += trade.Size
-			}
-
-			candles[symbol] = candle
-		}
-
-		// Keep only trades from the current minute and future
-		var remainingTrades []EquityTrade
-		for _, trade := range trades {
-			if trade.Timestamp >= previousMinuteEnd {
-				remainingTrades = append(remainingTrades, trade)
-			}
-		}
-		ta.trades[symbol] = remainingTrades
-	}
-
-	return candles
 }

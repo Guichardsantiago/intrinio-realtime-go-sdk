@@ -59,11 +59,24 @@ func reportEquities(ticker <-chan time.Time) {
 
 func runEquitiesExample() *intrinio.Client {
 	var config intrinio.Config = intrinio.LoadConfig("equities-config.json")
-	var client *intrinio.Client = intrinio.NewEquitiesClient(config, handleEquityTrade, handleEquityQuote, handleEquityCandle)
+
+	// Create candle aggregator using the new AggregateCandle function
+	candleAggregator := intrinio.AggregateCandle(handleEquityCandle)
+
+	var client *intrinio.Client = intrinio.NewEquitiesClient(config,
+		func(trade intrinio.EquityTrade) {
+			// Handle trade counting
+			handleEquityTrade(trade)
+			// Add trade to candle aggregator
+			candleAggregator.AddTrade(trade)
+		},
+		handleEquityQuote,
+		nil) // Don't use built-in candle handling, use our aggregator
+
 	client.Start()
 	symbols := []string{"AAPL", "MSFT"}
-	//client.Join("GOOG")
 	client.JoinMany(symbols)
+	//client.Join("GOOG")
 	//client.JoinLobby()
 	var ticker *time.Ticker = time.NewTicker(30 * time.Second)
 	go reportEquities(ticker.C)
